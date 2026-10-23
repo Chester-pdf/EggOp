@@ -25,7 +25,11 @@ jobs:
           }
 
           repositories {
-          	// Loom сам добавляет нужные Maven-репозитории.
+          	// Loom сам добавляет нужные Maven-репозитории; здесь — только Mod Menu.
+          	maven {
+          		name = 'Terraformers'
+          		url = 'https://maven.terraformersmc.com/releases/'
+          	}
           }
 
           dependencies {
@@ -33,6 +37,9 @@ jobs:
           	minecraft "com.mojang:minecraft:${project.minecraft_version}"
           	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
           	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+          	// Mod Menu нужен только для компиляции экрана настроек; в игре он необязателен.
+          	compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
           }
 
           processResources {
@@ -63,9 +70,10 @@ jobs:
           loader_version=0.19.5
           loom_version=1.18.4
           fabric_api_version=0.161.0+26.2
+          modmenu_version=20.0.1
 
           # Mod
-          mod_version=1.0.0
+          mod_version=1.0.1
           maven_group=com.example.eggdrops
           archives_base_name=eggdrops
           EGGDROPS_EOF
@@ -94,19 +102,23 @@ jobs:
             "id": "eggdrops",
             "version": "${version}",
             "name": "Op Drops",
-            "description": "Брошенные яйца роняют крайне имбовые предметы.",
+            "description": "Брошенные яйца и сломанная трава роняют крайне имбовые предметы.",
             "authors": ["You"],
             "license": "MIT",
             "environment": "*",
             "entrypoints": {
-              "main": ["com.example.eggdrops.EggDropsMod"]
+              "main": ["com.example.eggdrops.EggDropsMod"],
+              "modmenu": ["com.example.eggdrops.client.OpDropsModMenu"]
             },
             "mixins": ["eggdrops.mixins.json"],
             "depends": {
-              "fabricloader": ">=0.19.0",
+              "fabricloader": ">=0.19.2",
               "minecraft": "~26.2",
               "java": ">=25",
               "fabric-api": "*"
+            },
+            "suggests": {
+              "modmenu": "*"
             }
           }
           EGGDROPS_EOF
@@ -130,6 +142,11 @@ jobs:
           package com.example.eggdrops;
 
           import net.fabricmc.api.ModInitializer;
+          import net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents;
+          import net.minecraft.core.registries.BuiltInRegistries;
+          import net.minecraft.server.level.ServerLevel;
+          import net.minecraft.world.Containers;
+          import net.minecraft.world.item.ItemStack;
           import org.slf4j.Logger;
           import org.slf4j.LoggerFactory;
 
@@ -137,15 +154,205 @@ jobs:
           	public static final String MOD_ID = "eggdrops";
           	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-          	/** Шанс, что яйцо вообще что-то уронит: 1.0 = всегда, 0.5 = в половине случаев. */
-          	public static final float DROP_CHANCE = 0.5f;
-
-          	/** Если дроп случился — шанс, что это «высокий» уровень (2 разных предмета). */
-          	public static final float HIGH_TIER_CHANCE = 0.25f;
-
           	@Override
           	public void onInitialize() {
-          		LOGGER.info("Egg Drops загружен: яйца теперь опасно щедрые.");
+          		OpDropsConfig.load();
+
+          		// Сломал траву (обычную или высокую) — получи ОП-лут.
+          		PlayerBlockBreakEvents.AFTER.register((level, player, pos, state, blockEntity) -> {
+          			if (!(level instanceof ServerLevel serverLevel)) {
+          				return;
+          			}
+
+          			String id = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+          			if (!id.equals("minecraft:short_grass") && !id.equals("minecraft:tall_grass")) {
+          				return;
+          			}
+          			if (serverLevel.getRandom().nextFloat() >= OpDropsConfig.grassDropChance) {
+          				return;
+          			}
+
+          			for (ItemStack loot : OpLoot.roll(serverLevel)) {
+          				Containers.dropItemStack(serverLevel, pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5, loot);
+          			}
+          		});
+
+          		LOGGER.info("Op Drops загружен: яйца и трава теперь опасно щедрые.");
+          	}
+          }
+          EGGDROPS_EOF
+          mkdir -p src/main/java/com/example/eggdrops
+          cat > src/main/java/com/example/eggdrops/OpDropsConfig.java <<'EGGDROPS_EOF'
+          package com.example.eggdrops;
+
+          import java.io.IOException;
+          import java.io.Reader;
+          import java.io.Writer;
+          import java.nio.charset.StandardCharsets;
+          import java.nio.file.Files;
+          import java.nio.file.Path;
+          import java.util.Properties;
+          import net.fabricmc.loader.api.FabricLoader;
+
+          /**
+           * Настройки мода. Хранятся в config/eggdrops.properties и правятся через Mod Menu.
+           * Значения — доли от 0.0 до 1.0 (1.0 = 100%).
+           */
+          public final class OpDropsConfig {
+
+          	private OpDropsConfig() {}
+
+          	/** Шанс, что брошенное яйцо при попадании уронит лут. */
+          	public static float eggDropChance = 1.0f;
+
+          	/** Шанс, что сломанная трава уронит лут. */
+          	public static float grassDropChance = 1.0f;
+
+          	/** Шанс «высокого» уровня при дропе (2 разных предмета вместо одного). */
+          	public static float highTierChance = 0.25f;
+
+          	private static Path file() {
+          		return FabricLoader.getInstance().getConfigDir().resolve("eggdrops.properties");
+          	}
+
+          	private static float clamp(float v) {
+          		return Math.max(0.0f, Math.min(1.0f, v));
+          	}
+
+          	private static float read(Properties props, String key, float fallback) {
+          		String raw = props.getProperty(key);
+          		if (raw == null) {
+          			return fallback;
+          		}
+          		try {
+          			return clamp(Float.parseFloat(raw.trim()));
+          		} catch (NumberFormatException ex) {
+          			return fallback;
+          		}
+          	}
+
+          	public static void load() {
+          		Path path = file();
+          		if (Files.exists(path)) {
+          			Properties props = new Properties();
+          			try (Reader reader = Files.newBufferedReader(path, StandardCharsets.UTF_8)) {
+          				props.load(reader);
+          				eggDropChance = read(props, "eggDropChance", eggDropChance);
+          				grassDropChance = read(props, "grassDropChance", grassDropChance);
+          				highTierChance = read(props, "highTierChance", highTierChance);
+          			} catch (IOException ex) {
+          				EggDropsMod.LOGGER.warn("Не удалось прочитать конфиг, использую значения по умолчанию", ex);
+          			}
+          		}
+          		save(); // создаём файл, если его ещё нет
+          	}
+
+          	public static void save() {
+          		Properties props = new Properties();
+          		props.setProperty("eggDropChance", Float.toString(clamp(eggDropChance)));
+          		props.setProperty("grassDropChance", Float.toString(clamp(grassDropChance)));
+          		props.setProperty("highTierChance", Float.toString(clamp(highTierChance)));
+
+          		try (Writer writer = Files.newBufferedWriter(file(), StandardCharsets.UTF_8)) {
+          			props.store(writer, "Op Drops: шансы от 0.0 до 1.0 (1.0 = 100%)");
+          		} catch (IOException ex) {
+          			EggDropsMod.LOGGER.warn("Не удалось сохранить конфиг", ex);
+          		}
+          	}
+          }
+          EGGDROPS_EOF
+          mkdir -p src/main/java/com/example/eggdrops/client
+          cat > src/main/java/com/example/eggdrops/client/OpDropsModMenu.java <<'EGGDROPS_EOF'
+          package com.example.eggdrops.client;
+
+          import com.terraformersmc.modmenu.api.ConfigScreenFactory;
+          import com.terraformersmc.modmenu.api.ModMenuApi;
+
+          /** Подключает экран настроек к кнопке «Настроить» в Mod Menu. Загружается только на клиенте. */
+          public class OpDropsModMenu implements ModMenuApi {
+
+          	@Override
+          	public ConfigScreenFactory<?> getModConfigScreenFactory() {
+          		return parent -> new OpDropsConfigScreen(parent);
+          	}
+          }
+          EGGDROPS_EOF
+          mkdir -p src/main/java/com/example/eggdrops/client
+          cat > src/main/java/com/example/eggdrops/client/OpDropsConfigScreen.java <<'EGGDROPS_EOF'
+          package com.example.eggdrops.client;
+
+          import com.example.eggdrops.OpDropsConfig;
+          import java.util.function.DoubleConsumer;
+          import java.util.function.DoubleSupplier;
+          import net.minecraft.client.gui.components.Button;
+          import net.minecraft.client.gui.screens.Screen;
+          import net.minecraft.network.chat.Component;
+
+          /**
+           * Экран настроек: каждая кнопка по клику переключает шанс по кругу
+           * 0% → 10% → 25% → 50% → 75% → 100% → 0%...
+           * Намеренно без собственной отрисовки, чтобы не зависеть от внутренностей GUI.
+           */
+          public class OpDropsConfigScreen extends Screen {
+
+          	private static final double[] STEPS = {0.0, 0.10, 0.25, 0.50, 0.75, 1.0};
+
+          	private final Screen parent;
+
+          	public OpDropsConfigScreen(Screen parent) {
+          		super(Component.literal("Op Drops — настройки"));
+          		this.parent = parent;
+          	}
+
+          	@Override
+          	protected void init() {
+          		int w = 260;
+          		int x = this.width / 2 - w / 2;
+          		int y = this.height / 2 - 70;
+
+          		// Заголовок — неактивная кнопка (самый простой «лейбл» без своей отрисовки).
+          		Button heading = Button.builder(this.title, b -> {}).bounds(x, y, w, 20).build();
+          		heading.active = false;
+          		this.addRenderableWidget(heading);
+
+          		this.addRenderableWidget(chanceButton(x, y + 32, w, "Шанс дропа из яйца",
+          				() -> OpDropsConfig.eggDropChance, v -> OpDropsConfig.eggDropChance = (float) v));
+
+          		this.addRenderableWidget(chanceButton(x, y + 58, w, "Шанс дропа из травы",
+          				() -> OpDropsConfig.grassDropChance, v -> OpDropsConfig.grassDropChance = (float) v));
+
+          		this.addRenderableWidget(chanceButton(x, y + 84, w, "Шанс высокого уровня (2 предмета)",
+          				() -> OpDropsConfig.highTierChance, v -> OpDropsConfig.highTierChance = (float) v));
+
+          		this.addRenderableWidget(Button.builder(Component.literal("Готово"), b -> this.onClose())
+          				.bounds(x, y + 120, w, 20).build());
+          	}
+
+          	private static Button chanceButton(int x, int y, int w, String label,
+          			DoubleSupplier getter, DoubleConsumer setter) {
+          		return Button.builder(text(label, getter.getAsDouble()), b -> {
+          			setter.accept(nextStep(getter.getAsDouble()));
+          			b.setMessage(text(label, getter.getAsDouble()));
+          		}).bounds(x, y, w, 20).build();
+          	}
+
+          	private static Component text(String label, double value) {
+          		return Component.literal(label + ": " + Math.round(value * 100) + "%");
+          	}
+
+          	private static double nextStep(double current) {
+          		for (double step : STEPS) {
+          			if (step > current + 0.001) {
+          				return step;
+          			}
+          		}
+          		return STEPS[0];
+          	}
+
+          	@Override
+          	public void onClose() {
+          		OpDropsConfig.save();
+          		this.minecraft.gui.setScreen(this.parent);
           	}
           }
           EGGDROPS_EOF
@@ -206,12 +413,13 @@ jobs:
           			stack(Items.WIND_CHARGE, 64),
           			stack(Items.EMERALD_BLOCK, 16),
           			stack(Items.TNT, 32),
-          			gear(Items.DIAMOND_SWORD,
-          					e(Enchantments.SHARPNESS, 5), e(Enchantments.SWEEPING_EDGE, 3),
-          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
-          			gear(Items.DIAMOND_PICKAXE,
-          					e(Enchantments.EFFICIENCY, 5), e(Enchantments.FORTUNE, 3),
-          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
+          			// Вся броня, мечи, топоры и кирки — только незеритовые.
+          			gear(Items.NETHERITE_SWORD,
+          					e(Enchantments.SHARPNESS, 3), e(Enchantments.SWEEPING_EDGE, 2),
+          					e(Enchantments.UNBREAKING, 2)),
+          			gear(Items.NETHERITE_PICKAXE,
+          					e(Enchantments.EFFICIENCY, 3), e(Enchantments.FORTUNE, 2),
+          					e(Enchantments.UNBREAKING, 2)),
           			gear(Items.BOW,
           					e(Enchantments.POWER, 5), e(Enchantments.INFINITY, 1),
           					e(Enchantments.FLAME, 1), e(Enchantments.UNBREAKING, 3)),
@@ -220,10 +428,8 @@ jobs:
           					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
           			gear(Items.SHIELD,
           					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
-          			gear(Items.DIAMOND_BOOTS,
-          					e(Enchantments.PROTECTION, 4), e(Enchantments.FEATHER_FALLING, 4),
-          					e(Enchantments.DEPTH_STRIDER, 3), e(Enchantments.UNBREAKING, 3),
-          					e(Enchantments.MENDING, 1)),
+          			gear(Items.NETHERITE_LEGGINGS,
+          					e(Enchantments.PROTECTION, 3), e(Enchantments.UNBREAKING, 2)),
           			gear(Items.TRIDENT,
           					e(Enchantments.IMPALING, 5), e(Enchantments.LOYALTY, 3),
           					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1))
@@ -267,7 +473,7 @@ jobs:
           	public static List<ItemStack> roll(ServerLevel level) {
           		var random = level.getRandom();
 
-          		if (random.nextFloat() < EggDropsMod.HIGH_TIER_CHANCE) {
+          		if (random.nextFloat() < OpDropsConfig.highTierChance) {
           			int first = random.nextInt(HIGH.size());
           			int second = random.nextInt(HIGH.size() - 1);
           			if (second >= first) {
@@ -284,7 +490,7 @@ jobs:
           cat > src/main/java/com/example/eggdrops/mixin/ProjectileMixin.java <<'EGGDROPS_EOF'
           package com.example.eggdrops.mixin;
 
-          import com.example.eggdrops.EggDropsMod;
+          import com.example.eggdrops.OpDropsConfig;
           import com.example.eggdrops.OpLoot;
           import net.minecraft.core.registries.BuiltInRegistries;
           import net.minecraft.server.level.ServerLevel;
@@ -316,7 +522,7 @@ jobs:
           		if (!(projectile.level() instanceof ServerLevel level)) {
           			return;
           		}
-          		if (level.getRandom().nextFloat() >= EggDropsMod.DROP_CHANCE) {
+          		if (level.getRandom().nextFloat() >= OpDropsConfig.eggDropChance) {
           			return;
           		}
 

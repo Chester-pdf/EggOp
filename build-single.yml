@@ -1,0 +1,283 @@
+name: build
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create project files
+        run: |
+          mkdir -p .
+          cat > build.gradle <<'EGGDROPS_EOF'
+          plugins {
+          	id 'net.fabricmc.fabric-loom'
+          	id 'maven-publish'
+          }
+
+          version = project.mod_version
+          group = project.maven_group
+
+          base {
+          	archivesName = project.archives_base_name
+          }
+
+          repositories {
+          	// Loom сам добавляет нужные Maven-репозитории.
+          }
+
+          dependencies {
+          	// 26.x — игра без обфускации, поэтому строки mappings больше нет.
+          	minecraft "com.mojang:minecraft:${project.minecraft_version}"
+          	implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+          	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+          }
+
+          processResources {
+          	inputs.property "version", project.version
+
+          	filesMatching("fabric.mod.json") {
+          		expand "version": project.version
+          	}
+          }
+
+          tasks.withType(JavaCompile).configureEach {
+          	it.options.release = 25
+          }
+
+          java {
+          	withSourcesJar()
+          	sourceCompatibility = JavaVersion.VERSION_25
+          	targetCompatibility = JavaVersion.VERSION_25
+          }
+          EGGDROPS_EOF
+          mkdir -p .
+          cat > gradle.properties <<'EGGDROPS_EOF'
+          org.gradle.jvmargs=-Xmx2G
+          org.gradle.parallel=true
+
+          # Fabric: https://fabricmc.net/develop
+          minecraft_version=26.2
+          loader_version=0.19.5
+          loom_version=1.18-SNAPSHOT
+          fabric_api_version=0.161.0+26.2
+
+          # Mod
+          mod_version=1.0.0
+          maven_group=com.example.eggdrops
+          archives_base_name=eggdrops
+          EGGDROPS_EOF
+          mkdir -p .
+          cat > settings.gradle <<'EGGDROPS_EOF'
+          pluginManagement {
+          	repositories {
+          		maven {
+          			name = 'Fabric'
+          			url = 'https://maven.fabricmc.net/'
+          		}
+          		mavenCentral()
+          		gradlePluginPortal()
+          	}
+          	plugins {
+          		id 'net.fabricmc.fabric-loom' version providers.gradleProperty('loom_version').get()
+          	}
+          }
+
+          rootProject.name = 'eggdrops'
+          EGGDROPS_EOF
+          mkdir -p src/main/resources
+          cat > src/main/resources/fabric.mod.json <<'EGGDROPS_EOF'
+          {
+            "schemaVersion": 1,
+            "id": "eggdrops",
+            "version": "${version}",
+            "name": "Egg Drops",
+            "description": "Брошенные яйца роняют крайне имбовые предметы.",
+            "authors": ["You"],
+            "license": "MIT",
+            "environment": "*",
+            "entrypoints": {
+              "main": ["com.example.eggdrops.EggDropsMod"]
+            },
+            "mixins": ["eggdrops.mixins.json"],
+            "depends": {
+              "fabricloader": ">=0.19.0",
+              "minecraft": "~26.2",
+              "java": ">=25",
+              "fabric-api": "*"
+            }
+          }
+          EGGDROPS_EOF
+          mkdir -p src/main/resources
+          cat > src/main/resources/eggdrops.mixins.json <<'EGGDROPS_EOF'
+          {
+            "required": true,
+            "minVersion": "0.8",
+            "package": "com.example.eggdrops.mixin",
+            "compatibilityLevel": "JAVA_21",
+            "mixins": [
+              "ProjectileMixin"
+            ],
+            "injectors": {
+              "defaultRequire": 1
+            }
+          }
+          EGGDROPS_EOF
+          mkdir -p src/main/java/com/example/eggdrops
+          cat > src/main/java/com/example/eggdrops/EggDropsMod.java <<'EGGDROPS_EOF'
+          package com.example.eggdrops;
+
+          import net.fabricmc.api.ModInitializer;
+          import org.slf4j.Logger;
+          import org.slf4j.LoggerFactory;
+
+          public class EggDropsMod implements ModInitializer {
+          	public static final String MOD_ID = "eggdrops";
+          	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+
+          	/** Шанс дропа при попадании яйца: 1.0 = всегда, 0.25 = в 25% случаев. */
+          	public static final float DROP_CHANCE = 1.0f;
+
+          	@Override
+          	public void onInitialize() {
+          		LOGGER.info("Egg Drops загружен: яйца теперь опасно щедрые.");
+          	}
+          }
+          EGGDROPS_EOF
+          mkdir -p src/main/java/com/example/eggdrops
+          cat > src/main/java/com/example/eggdrops/OpLoot.java <<'EGGDROPS_EOF'
+          package com.example.eggdrops;
+
+          import net.minecraft.core.Holder;
+          import net.minecraft.core.registries.Registries;
+          import net.minecraft.resources.ResourceKey;
+          import net.minecraft.server.level.ServerLevel;
+          import net.minecraft.world.item.Item;
+          import net.minecraft.world.item.ItemStack;
+          import net.minecraft.world.item.Items;
+          import net.minecraft.world.item.enchantment.Enchantment;
+          import net.minecraft.world.item.enchantment.Enchantments;
+
+          /** Список очень имбовых предметов, которые может уронить яйцо. */
+          public final class OpLoot {
+
+          	private OpLoot() {}
+
+          	private record Ench(ResourceKey<Enchantment> key, int level) {}
+
+          	private static Ench e(ResourceKey<Enchantment> key, int level) {
+          		return new Ench(key, level);
+          	}
+
+          	private static ItemStack enchanted(ServerLevel level, Item item, Ench... enchants) {
+          		ItemStack stack = new ItemStack(item);
+          		var registry = level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
+          		for (Ench ench : enchants) {
+          			Holder<Enchantment> holder = registry.getOrThrow(ench.key());
+          			stack.enchant(holder, ench.level());
+          		}
+          		return stack;
+          	}
+
+          	public static ItemStack roll(ServerLevel level) {
+          		return switch (level.getRandom().nextInt(16)) {
+          			case 0 -> new ItemStack(Items.ENCHANTED_GOLDEN_APPLE, 16);
+          			case 1 -> new ItemStack(Items.NETHERITE_INGOT, 16);
+          			case 2 -> new ItemStack(Items.DIAMOND_BLOCK, 16);
+          			case 3 -> new ItemStack(Items.TOTEM_OF_UNDYING);
+          			case 4 -> new ItemStack(Items.ELYTRA);
+          			case 5 -> new ItemStack(Items.NETHER_STAR, 4);
+          			case 6 -> new ItemStack(Items.BEACON, 2);
+          			case 7 -> new ItemStack(Items.DRAGON_EGG);
+          			case 8 -> new ItemStack(Items.WIND_CHARGE, 64);
+          			case 9 -> new ItemStack(Items.FIREWORK_ROCKET, 64);
+          			case 10 -> enchanted(level, Items.NETHERITE_SWORD,
+          					e(Enchantments.SHARPNESS, 5), e(Enchantments.LOOTING, 3),
+          					e(Enchantments.FIRE_ASPECT, 2), e(Enchantments.UNBREAKING, 3),
+          					e(Enchantments.MENDING, 1));
+          			case 11 -> enchanted(level, Items.NETHERITE_PICKAXE,
+          					e(Enchantments.EFFICIENCY, 5), e(Enchantments.FORTUNE, 3),
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1));
+          			case 12 -> enchanted(level, Items.NETHERITE_AXE,
+          					e(Enchantments.SHARPNESS, 5), e(Enchantments.EFFICIENCY, 5),
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1));
+          			case 13 -> enchanted(level, Items.MACE,
+          					e(Enchantments.DENSITY, 5), e(Enchantments.BREACH, 4),
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1));
+          			case 14 -> enchanted(level, Items.NETHERITE_CHESTPLATE,
+          					e(Enchantments.PROTECTION, 4), e(Enchantments.UNBREAKING, 3),
+          					e(Enchantments.MENDING, 1));
+          			default -> enchanted(level, Items.BOW,
+          					e(Enchantments.POWER, 5), e(Enchantments.INFINITY, 1),
+          					e(Enchantments.FLAME, 1), e(Enchantments.UNBREAKING, 3));
+          		};
+          	}
+          }
+          EGGDROPS_EOF
+          mkdir -p src/main/java/com/example/eggdrops/mixin
+          cat > src/main/java/com/example/eggdrops/mixin/ProjectileMixin.java <<'EGGDROPS_EOF'
+          package com.example.eggdrops.mixin;
+
+          import com.example.eggdrops.EggDropsMod;
+          import com.example.eggdrops.OpLoot;
+          import net.minecraft.server.level.ServerLevel;
+          import net.minecraft.world.Containers;
+          import net.minecraft.world.entity.EntityType;
+          import net.minecraft.world.entity.projectile.Projectile;
+          import net.minecraft.world.item.ItemStack;
+          import net.minecraft.world.phys.HitResult;
+          import org.spongepowered.asm.mixin.Mixin;
+          import org.spongepowered.asm.mixin.injection.At;
+          import org.spongepowered.asm.mixin.injection.Inject;
+          import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+          /**
+           * Вешаемся на общий класс Projectile и проверяем тип сущности — так мы не зависим
+           * от точного пакета ThrownEgg, который Mojang переносил между версиями.
+           */
+          @Mixin(Projectile.class)
+          public abstract class ProjectileMixin {
+
+          	@Inject(method = "onHit", at = @At("HEAD"))
+          	private void eggdrops$dropOpLoot(HitResult hitResult, CallbackInfo ci) {
+          		Projectile projectile = (Projectile) (Object) this;
+
+          		if (projectile.getType() != EntityType.EGG) {
+          			return;
+          		}
+          		if (!(projectile.level() instanceof ServerLevel level)) {
+          			return;
+          		}
+          		if (level.getRandom().nextFloat() >= EggDropsMod.DROP_CHANCE) {
+          			return;
+          		}
+
+          		ItemStack loot = OpLoot.roll(level);
+          		Containers.dropItemStack(level, projectile.getX(), projectile.getY(), projectile.getZ(), loot);
+          	}
+          }
+          EGGDROPS_EOF
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 25
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 9.5.1
+
+      - name: Build mod
+        run: gradle build
+
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: eggdrops-jar
+          path: |
+            build/libs/*.jar
+            !build/libs/*-sources.jar

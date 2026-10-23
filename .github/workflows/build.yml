@@ -73,7 +73,7 @@ jobs:
           modmenu_version=20.0.1
 
           # Mod
-          mod_version=1.0.1
+          mod_version=1.0.2
           maven_group=com.example.eggdrops
           archives_base_name=eggdrops
           EGGDROPS_EOF
@@ -373,9 +373,10 @@ jobs:
           import net.minecraft.world.item.enchantment.Enchantments;
 
           /**
-           * Два пула лута по 15 предметов:
-           *  - LOW  — «обычный» уровень, роняет 1 предмет;
-           *  - HIGH — «высокий» уровень, роняет 2 разных предмета.
+           * Два пула лута:
+           *  - LOW  — обычный уровень, роняет 1 предмет (зачарования на максимуме обычной игры);
+           *  - HIGH — высокий уровень, роняет 2 разных предмета (зачарования выше ванильного максимума).
+           * Броня, мечи, топоры и кирки — только незеритовые.
            */
           public final class OpLoot {
 
@@ -403,69 +404,105 @@ jobs:
           		};
           	}
 
-          	// ---------------------------------------------------------------- LOW (15)
+          	// ------------------------------------------------------------------- LOW
           	private static final List<Function<ServerLevel, ItemStack>> LOW = List.of(
-          			stack(Items.GOLDEN_APPLE, 16),
-          			stack(Items.DIAMOND, 32),
+          			// Блоки руд
+          			stack(Items.GOLD_BLOCK, 32),
+          			stack(Items.IRON_BLOCK, 32),
+          			stack(Items.COAL_BLOCK, 64),
+          			stack(Items.EMERALD_BLOCK, 32),
+          			stack(Items.DIAMOND, 64),
+
+          			// Еда
+          			stack(Items.GOLDEN_APPLE, 32),
+          			stack(Items.GOLDEN_CARROT, 64),
+          			stack(Items.COOKED_BEEF, 64),
+
+          			// Полезное
           			stack(Items.EXPERIENCE_BOTTLE, 64),
           			stack(Items.ENDER_PEARL, 16),
           			stack(Items.FIREWORK_ROCKET, 64),
           			stack(Items.WIND_CHARGE, 64),
-          			stack(Items.EMERALD_BLOCK, 16),
-          			stack(Items.TNT, 32),
-          			// Вся броня, мечи, топоры и кирки — только незеритовые.
+          			stack(Items.TNT, 64),
+
+          			// Незеритовое снаряжение — максимум обычных зачарований
+          			gear(Items.NETHERITE_HELMET,
+          					e(Enchantments.PROTECTION, 4), e(Enchantments.RESPIRATION, 3),
+          					e(Enchantments.AQUA_AFFINITY, 1), e(Enchantments.UNBREAKING, 3),
+          					e(Enchantments.MENDING, 1)),
+          			gear(Items.NETHERITE_LEGGINGS,
+          					e(Enchantments.PROTECTION, 4), e(Enchantments.UNBREAKING, 3),
+          					e(Enchantments.MENDING, 1)),
           			gear(Items.NETHERITE_SWORD,
-          					e(Enchantments.SHARPNESS, 3), e(Enchantments.SWEEPING_EDGE, 2),
-          					e(Enchantments.UNBREAKING, 2)),
+          					e(Enchantments.SHARPNESS, 5), e(Enchantments.SWEEPING_EDGE, 3),
+          					e(Enchantments.LOOTING, 3), e(Enchantments.FIRE_ASPECT, 2),
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
           			gear(Items.NETHERITE_PICKAXE,
-          					e(Enchantments.EFFICIENCY, 3), e(Enchantments.FORTUNE, 2),
-          					e(Enchantments.UNBREAKING, 2)),
+          					e(Enchantments.EFFICIENCY, 5), e(Enchantments.FORTUNE, 3),
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
+
+          			// Остальное оружие
           			gear(Items.BOW,
           					e(Enchantments.POWER, 5), e(Enchantments.INFINITY, 1),
           					e(Enchantments.FLAME, 1), e(Enchantments.UNBREAKING, 3)),
           			gear(Items.CROSSBOW,
           					e(Enchantments.QUICK_CHARGE, 3), e(Enchantments.PIERCING, 4),
           					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
-          			gear(Items.SHIELD,
-          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
-          			gear(Items.NETHERITE_LEGGINGS,
-          					e(Enchantments.PROTECTION, 3), e(Enchantments.UNBREAKING, 2)),
           			gear(Items.TRIDENT,
           					e(Enchantments.IMPALING, 5), e(Enchantments.LOYALTY, 3),
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
+          			gear(Items.SHIELD,
           					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1))
           	);
 
-          	// --------------------------------------------------------------- HIGH (15)
+          	// ------------------------------------------------------------------ HIGH
           	private static final List<Function<ServerLevel, ItemStack>> HIGH = List.of(
-          			stack(Items.ENCHANTED_GOLDEN_APPLE, 32),
-          			stack(Items.NETHERITE_INGOT, 16),
-          			stack(Items.DIAMOND_BLOCK, 32),
+          			// Ресурсы и еда
+          			stack(Items.ENCHANTED_GOLDEN_APPLE, 64),
+          			stack(Items.NETHERITE_INGOT, 32),
+          			stack(Items.NETHERITE_BLOCK, 8),
+          			stack(Items.DIAMOND_BLOCK, 64),
+          			stack(Items.GOLD_BLOCK, 64),
+          			stack(Items.IRON_BLOCK, 64),
+          			stack(Items.COAL_BLOCK, 64),
+
+          			// Редкости
           			stack(Items.TOTEM_OF_UNDYING, 1),
-          			gear(Items.ELYTRA,
-          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
-          			stack(Items.NETHER_STAR, 4),
-          			stack(Items.BEACON, 2),
+          			stack(Items.NETHER_STAR, 8),
+          			stack(Items.BEACON, 4),
           			stack(Items.DRAGON_EGG, 1),
           			stack(Items.END_CRYSTAL, 64),
-          			gear(Items.NETHERITE_SWORD,
-          					e(Enchantments.SHARPNESS, 5), e(Enchantments.LOOTING, 3),
-          					e(Enchantments.FIRE_ASPECT, 2), e(Enchantments.UNBREAKING, 3),
+          			gear(Items.ELYTRA,
+          					e(Enchantments.UNBREAKING, 10), e(Enchantments.MENDING, 1)),
+
+          			// Незеритовое снаряжение — зачарования выше ванильного максимума
+          			gear(Items.NETHERITE_HELMET,
+          					e(Enchantments.PROTECTION, 10), e(Enchantments.RESPIRATION, 5),
+          					e(Enchantments.AQUA_AFFINITY, 1), e(Enchantments.UNBREAKING, 10),
           					e(Enchantments.MENDING, 1)),
-          			gear(Items.NETHERITE_PICKAXE,
-          					e(Enchantments.EFFICIENCY, 5), e(Enchantments.FORTUNE, 3),
-          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
-          			gear(Items.NETHERITE_AXE,
-          					e(Enchantments.SHARPNESS, 5), e(Enchantments.EFFICIENCY, 5),
-          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
-          			gear(Items.MACE,
-          					e(Enchantments.DENSITY, 5), e(Enchantments.BREACH, 4),
-          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
           			gear(Items.NETHERITE_CHESTPLATE,
-          					e(Enchantments.PROTECTION, 4), e(Enchantments.THORNS, 3),
-          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
+          					e(Enchantments.PROTECTION, 10), e(Enchantments.THORNS, 5),
+          					e(Enchantments.UNBREAKING, 10), e(Enchantments.MENDING, 1)),
+          			gear(Items.NETHERITE_LEGGINGS,
+          					e(Enchantments.PROTECTION, 10), e(Enchantments.SWIFT_SNEAK, 5),
+          					e(Enchantments.UNBREAKING, 10), e(Enchantments.MENDING, 1)),
           			gear(Items.NETHERITE_BOOTS,
-          					e(Enchantments.PROTECTION, 4), e(Enchantments.FEATHER_FALLING, 4),
-          					e(Enchantments.DEPTH_STRIDER, 3), e(Enchantments.UNBREAKING, 3),
+          					e(Enchantments.PROTECTION, 10), e(Enchantments.FEATHER_FALLING, 10),
+          					e(Enchantments.DEPTH_STRIDER, 5), e(Enchantments.UNBREAKING, 10),
+          					e(Enchantments.MENDING, 1)),
+          			gear(Items.NETHERITE_SWORD,
+          					e(Enchantments.SHARPNESS, 10), e(Enchantments.SWEEPING_EDGE, 5),
+          					e(Enchantments.LOOTING, 5), e(Enchantments.FIRE_ASPECT, 4),
+          					e(Enchantments.UNBREAKING, 10), e(Enchantments.MENDING, 1)),
+          			gear(Items.NETHERITE_AXE,
+          					e(Enchantments.SHARPNESS, 10), e(Enchantments.EFFICIENCY, 10),
+          					e(Enchantments.UNBREAKING, 10), e(Enchantments.MENDING, 1)),
+          			gear(Items.NETHERITE_PICKAXE,
+          					e(Enchantments.EFFICIENCY, 10), e(Enchantments.FORTUNE, 5),
+          					e(Enchantments.UNBREAKING, 10), e(Enchantments.MENDING, 1)),
+          			gear(Items.MACE,
+          					e(Enchantments.DENSITY, 10), e(Enchantments.BREACH, 6),
+          					e(Enchantments.WIND_BURST, 5), e(Enchantments.UNBREAKING, 10),
           					e(Enchantments.MENDING, 1))
           	);
 

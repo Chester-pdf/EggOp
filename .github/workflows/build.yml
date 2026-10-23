@@ -73,7 +73,7 @@ jobs:
           modmenu_version=20.0.1
 
           # Mod
-          mod_version=1.0.2
+          mod_version=1.0.3
           maven_group=com.example.eggdrops
           archives_base_name=eggdrops
           EGGDROPS_EOF
@@ -421,8 +421,10 @@ jobs:
           			// Полезное
           			stack(Items.EXPERIENCE_BOTTLE, 64),
           			stack(Items.ENDER_PEARL, 16),
+          			stack(Items.ENDER_EYE, 16),
           			stack(Items.FIREWORK_ROCKET, 64),
           			stack(Items.WIND_CHARGE, 64),
+          			stack(Items.SPECTRAL_ARROW, 64),
           			stack(Items.TNT, 64),
 
           			// Незеритовое снаряжение — максимум обычных зачарований
@@ -472,6 +474,8 @@ jobs:
           			stack(Items.BEACON, 4),
           			stack(Items.DRAGON_EGG, 1),
           			stack(Items.END_CRYSTAL, 64),
+          			stack(Items.ENDER_EYE, 64),
+          			stack(Items.SPECTRAL_ARROW, 64),
           			gear(Items.ELYTRA,
           					e(Enchantments.UNBREAKING, 10), e(Enchantments.MENDING, 1)),
 

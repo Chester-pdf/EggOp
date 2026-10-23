@@ -93,7 +93,7 @@ jobs:
             "schemaVersion": 1,
             "id": "eggdrops",
             "version": "${version}",
-            "name": "Egg Drops",
+            "name": "Op Drops",
             "description": "Брошенные яйца роняют крайне имбовые предметы.",
             "authors": ["You"],
             "license": "MIT",
@@ -137,8 +137,11 @@ jobs:
           	public static final String MOD_ID = "eggdrops";
           	public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
-          	/** Шанс дропа при попадании яйца: 1.0 = всегда, 0.25 = в 25% случаев. */
-          	public static final float DROP_CHANCE = 1.0f;
+          	/** Шанс, что яйцо вообще что-то уронит: 1.0 = всегда, 0.5 = в половине случаев. */
+          	public static final float DROP_CHANCE = 0.5f;
+
+          	/** Если дроп случился — шанс, что это «высокий» уровень (2 разных предмета). */
+          	public static final float HIGH_TIER_CHANCE = 0.25f;
 
           	@Override
           	public void onInitialize() {
@@ -150,6 +153,8 @@ jobs:
           cat > src/main/java/com/example/eggdrops/OpLoot.java <<'EGGDROPS_EOF'
           package com.example.eggdrops;
 
+          import java.util.List;
+          import java.util.function.Function;
           import net.minecraft.core.Holder;
           import net.minecraft.core.registries.Registries;
           import net.minecraft.resources.ResourceKey;
@@ -160,7 +165,11 @@ jobs:
           import net.minecraft.world.item.enchantment.Enchantment;
           import net.minecraft.world.item.enchantment.Enchantments;
 
-          /** Список очень имбовых предметов, которые может уронить яйцо. */
+          /**
+           * Два пула лута по 15 предметов:
+           *  - LOW  — «обычный» уровень, роняет 1 предмет;
+           *  - HIGH — «высокий» уровень, роняет 2 разных предмета.
+           */
           public final class OpLoot {
 
           	private OpLoot() {}
@@ -171,48 +180,103 @@ jobs:
           		return new Ench(key, level);
           	}
 
-          	private static ItemStack enchanted(ServerLevel level, Item item, Ench... enchants) {
-          		ItemStack stack = new ItemStack(item);
-          		var registry = level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
-          		for (Ench ench : enchants) {
-          			Holder<Enchantment> holder = registry.getOrThrow(ench.key());
-          			stack.enchant(holder, ench.level());
-          		}
-          		return stack;
+          	private static Function<ServerLevel, ItemStack> stack(Item item, int count) {
+          		return level -> new ItemStack(item, count);
           	}
 
-          	public static ItemStack roll(ServerLevel level) {
-          		return switch (level.getRandom().nextInt(16)) {
-          			case 0 -> new ItemStack(Items.ENCHANTED_GOLDEN_APPLE, 16);
-          			case 1 -> new ItemStack(Items.NETHERITE_INGOT, 16);
-          			case 2 -> new ItemStack(Items.DIAMOND_BLOCK, 16);
-          			case 3 -> new ItemStack(Items.TOTEM_OF_UNDYING);
-          			case 4 -> new ItemStack(Items.ELYTRA);
-          			case 5 -> new ItemStack(Items.NETHER_STAR, 4);
-          			case 6 -> new ItemStack(Items.BEACON, 2);
-          			case 7 -> new ItemStack(Items.DRAGON_EGG);
-          			case 8 -> new ItemStack(Items.WIND_CHARGE, 64);
-          			case 9 -> new ItemStack(Items.FIREWORK_ROCKET, 64);
-          			case 10 -> enchanted(level, Items.NETHERITE_SWORD,
+          	private static Function<ServerLevel, ItemStack> gear(Item item, Ench... enchants) {
+          		return level -> {
+          			ItemStack stack = new ItemStack(item);
+          			var registry = level.registryAccess().lookupOrThrow(Registries.ENCHANTMENT);
+          			for (Ench ench : enchants) {
+          				Holder<Enchantment> holder = registry.getOrThrow(ench.key());
+          				stack.enchant(holder, ench.level());
+          			}
+          			return stack;
+          		};
+          	}
+
+          	// ---------------------------------------------------------------- LOW (15)
+          	private static final List<Function<ServerLevel, ItemStack>> LOW = List.of(
+          			stack(Items.GOLDEN_APPLE, 16),
+          			stack(Items.DIAMOND, 32),
+          			stack(Items.EXPERIENCE_BOTTLE, 64),
+          			stack(Items.ENDER_PEARL, 16),
+          			stack(Items.FIREWORK_ROCKET, 64),
+          			stack(Items.WIND_CHARGE, 64),
+          			stack(Items.EMERALD_BLOCK, 16),
+          			stack(Items.TNT, 32),
+          			gear(Items.DIAMOND_SWORD,
+          					e(Enchantments.SHARPNESS, 5), e(Enchantments.SWEEPING_EDGE, 3),
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
+          			gear(Items.DIAMOND_PICKAXE,
+          					e(Enchantments.EFFICIENCY, 5), e(Enchantments.FORTUNE, 3),
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
+          			gear(Items.BOW,
+          					e(Enchantments.POWER, 5), e(Enchantments.INFINITY, 1),
+          					e(Enchantments.FLAME, 1), e(Enchantments.UNBREAKING, 3)),
+          			gear(Items.CROSSBOW,
+          					e(Enchantments.QUICK_CHARGE, 3), e(Enchantments.PIERCING, 4),
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
+          			gear(Items.SHIELD,
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
+          			gear(Items.DIAMOND_BOOTS,
+          					e(Enchantments.PROTECTION, 4), e(Enchantments.FEATHER_FALLING, 4),
+          					e(Enchantments.DEPTH_STRIDER, 3), e(Enchantments.UNBREAKING, 3),
+          					e(Enchantments.MENDING, 1)),
+          			gear(Items.TRIDENT,
+          					e(Enchantments.IMPALING, 5), e(Enchantments.LOYALTY, 3),
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1))
+          	);
+
+          	// --------------------------------------------------------------- HIGH (15)
+          	private static final List<Function<ServerLevel, ItemStack>> HIGH = List.of(
+          			stack(Items.ENCHANTED_GOLDEN_APPLE, 32),
+          			stack(Items.NETHERITE_INGOT, 16),
+          			stack(Items.DIAMOND_BLOCK, 32),
+          			stack(Items.TOTEM_OF_UNDYING, 1),
+          			gear(Items.ELYTRA,
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
+          			stack(Items.NETHER_STAR, 4),
+          			stack(Items.BEACON, 2),
+          			stack(Items.DRAGON_EGG, 1),
+          			stack(Items.END_CRYSTAL, 64),
+          			gear(Items.NETHERITE_SWORD,
           					e(Enchantments.SHARPNESS, 5), e(Enchantments.LOOTING, 3),
           					e(Enchantments.FIRE_ASPECT, 2), e(Enchantments.UNBREAKING, 3),
-          					e(Enchantments.MENDING, 1));
-          			case 11 -> enchanted(level, Items.NETHERITE_PICKAXE,
+          					e(Enchantments.MENDING, 1)),
+          			gear(Items.NETHERITE_PICKAXE,
           					e(Enchantments.EFFICIENCY, 5), e(Enchantments.FORTUNE, 3),
-          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1));
-          			case 12 -> enchanted(level, Items.NETHERITE_AXE,
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
+          			gear(Items.NETHERITE_AXE,
           					e(Enchantments.SHARPNESS, 5), e(Enchantments.EFFICIENCY, 5),
-          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1));
-          			case 13 -> enchanted(level, Items.MACE,
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
+          			gear(Items.MACE,
           					e(Enchantments.DENSITY, 5), e(Enchantments.BREACH, 4),
-          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1));
-          			case 14 -> enchanted(level, Items.NETHERITE_CHESTPLATE,
-          					e(Enchantments.PROTECTION, 4), e(Enchantments.UNBREAKING, 3),
-          					e(Enchantments.MENDING, 1));
-          			default -> enchanted(level, Items.BOW,
-          					e(Enchantments.POWER, 5), e(Enchantments.INFINITY, 1),
-          					e(Enchantments.FLAME, 1), e(Enchantments.UNBREAKING, 3));
-          		};
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
+          			gear(Items.NETHERITE_CHESTPLATE,
+          					e(Enchantments.PROTECTION, 4), e(Enchantments.THORNS, 3),
+          					e(Enchantments.UNBREAKING, 3), e(Enchantments.MENDING, 1)),
+          			gear(Items.NETHERITE_BOOTS,
+          					e(Enchantments.PROTECTION, 4), e(Enchantments.FEATHER_FALLING, 4),
+          					e(Enchantments.DEPTH_STRIDER, 3), e(Enchantments.UNBREAKING, 3),
+          					e(Enchantments.MENDING, 1))
+          	);
+
+          	/** Возвращает предметы для одного дропа: 1 (обычный уровень) или 2 разных (высокий). */
+          	public static List<ItemStack> roll(ServerLevel level) {
+          		var random = level.getRandom();
+
+          		if (random.nextFloat() < EggDropsMod.HIGH_TIER_CHANCE) {
+          			int first = random.nextInt(HIGH.size());
+          			int second = random.nextInt(HIGH.size() - 1);
+          			if (second >= first) {
+          				second++; // гарантирует, что второй предмет отличается от первого
+          			}
+          			return List.of(HIGH.get(first).apply(level), HIGH.get(second).apply(level));
+          		}
+
+          		return List.of(LOW.get(random.nextInt(LOW.size())).apply(level));
           	}
           }
           EGGDROPS_EOF
@@ -256,8 +320,9 @@ jobs:
           			return;
           		}
 
-          		ItemStack loot = OpLoot.roll(level);
-          		Containers.dropItemStack(level, projectile.getX(), projectile.getY(), projectile.getZ(), loot);
+          		for (ItemStack loot : OpLoot.roll(level)) {
+          			Containers.dropItemStack(level, projectile.getX(), projectile.getY(), projectile.getZ(), loot);
+          		}
           	}
           }
           EGGDROPS_EOF
